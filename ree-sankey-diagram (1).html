@@ -1,0 +1,484 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Rare Earth Elements Supply Chain Flow</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/d3/7.8.5/d3.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/d3-sankey/0.12.3/d3-sankey.min.js"></script>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 0;
+            padding: 20px;
+            background-color: #f5f5f5;
+        }
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+            background-color: white;
+            padding: 30px;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        h1 {
+            text-align: center;
+            color: #333;
+            margin-bottom: 10px;
+        }
+        .subtitle {
+            text-align: center;
+            color: #666;
+            margin-bottom: 30px;
+            font-size: 14px;
+        }
+        .toggle-container {
+            text-align: center;
+            margin-bottom: 20px;
+        }
+        .toggle-btn {
+            padding: 10px 20px;
+            margin: 0 10px;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+            font-size: 14px;
+            transition: all 0.3s;
+        }
+        .toggle-btn.active {
+            background-color: #3498db;
+            color: white;
+        }
+        .toggle-btn:not(.active) {
+            background-color: #ecf0f1;
+            color: #333;
+        }
+        #sankey {
+            width: 100%;
+            height: 700px;
+        }
+        .node rect {
+            cursor: move;
+            fill-opacity: .9;
+            shape-rendering: crispEdges;
+        }
+        .node text {
+            pointer-events: none;
+            font-size: 11px;
+        }
+        .link {
+            fill: none;
+            stroke-opacity: .3;
+        }
+        .link:hover {
+            stroke-opacity: .5;
+        }
+        .tooltip {
+            position: absolute;
+            text-align: center;
+            padding: 8px;
+            font-size: 12px;
+            background: rgba(0, 0, 0, 0.8);
+            color: white;
+            border-radius: 4px;
+            pointer-events: none;
+            opacity: 0;
+            transition: opacity 0.3s;
+        }
+        .legend {
+            margin-top: 20px;
+            text-align: center;
+            font-size: 12px;
+            color: #666;
+        }
+        .annotation {
+            font-size: 11px;
+            font-style: italic;
+        }
+        
+        /* Blueprint styles */
+        .blueprint {
+            background-color: #1e3a5f;
+            color: #e8f4ff;
+        }
+        .blueprint #sankey {
+            background-color: #1e3a5f;
+        }
+        .blueprint .node rect {
+            stroke: #e8f4ff;
+            fill-opacity: 0.7;
+        }
+        .blueprint .node text {
+            fill: #e8f4ff;
+            text-shadow: 0 0 3px #4a90e2;
+            font-family: 'Courier New', monospace;
+        }
+        .blueprint .link {
+            stroke: #4a90e2;
+            stroke-opacity: 0.5;
+        }
+        .blueprint .link:hover {
+            stroke-opacity: 0.8;
+            stroke: #6bb6ff;
+        }
+        .blueprint .stage-label {
+            fill: #e8f4ff !important;
+            text-shadow: 0 0 5px #4a90e2;
+            font-family: 'Courier New', monospace;
+        }
+        .blueprint .annotation {
+            fill: #a8d0f0;
+        }
+        .blueprint h1, .blueprint .subtitle, .blueprint .legend {
+            color: #e8f4ff;
+        }
+    </style>
+</head>
+<body>
+    <div class="container" id="container">
+        <h1>Rare Earth Elements: From Mine to Market</h1>
+        <p class="subtitle">The flow of rare earth elements through the global supply chain</p>
+        
+        <div class="toggle-container">
+            <button class="toggle-btn active" onclick="setStyle('standard')">Standard View</button>
+            <button class="toggle-btn" onclick="setStyle('blueprint')">Blueprint View</button>
+        </div>
+        
+        <div id="sankey"></div>
+        <div class="tooltip"></div>
+        <div class="legend">
+            <p>Flow width represents percentage of global volume. China processes ~90% of global rare earth oxides, including materials mined elsewhere.</p>
+            <p>Mountain Pass (California) exports most of its production to China for refining.</p>
+        </div>
+    </div>
+
+    <script>
+        let currentStyle = 'standard';
+        
+        function setStyle(style) {
+            currentStyle = style;
+            document.querySelectorAll('.toggle-btn').forEach(btn => {
+                btn.classList.remove('active');
+            });
+            event.target.classList.add('active');
+            
+            const container = document.getElementById('container');
+            if (style === 'blueprint') {
+                container.classList.add('blueprint');
+            } else {
+                container.classList.remove('blueprint');
+            }
+            
+            // Redraw the diagram
+            drawSankey();
+        }
+        
+        function drawSankey() {
+            // Clear existing diagram
+            d3.select("#sankey").selectAll("*").remove();
+            
+            // Set dimensions and margins
+            const margin = {top: 10, right: 150, bottom: 50, left: 150};
+            const width = 1400 - margin.left - margin.right;
+            const height = 700 - margin.top - margin.bottom;
+
+            // Create SVG
+            const svg = d3.select("#sankey")
+                .append("svg")
+                .attr("width", width + margin.left + margin.right)
+                .attr("height", height + margin.top + margin.bottom)
+                .append("g")
+                .attr("transform", `translate(${margin.left},${margin.top})`);
+
+            // Create tooltip
+            const tooltip = d3.select(".tooltip");
+
+            // Define the sankey diagram
+            const sankey = d3.sankey()
+                .nodeWidth(20)
+                .nodePadding(15)
+                .extent([[1, 1], [width - 1, height - 6]]);
+
+            // Define color schemes
+            const standardColors = {
+                mining: d3.scaleOrdinal()
+                    .domain(["China", "United States", "Australia", "Myanmar", "Thailand", "Others"])
+                    .range(["#e74c3c", "#3498db", "#f39c12", "#9b59b6", "#16a085", "#95a5a6"]),
+                refining: {
+                    "China": "#c0392b",
+                    "Other": "#7f8c8d"
+                },
+                uses: "#34495e",
+                industries: {
+                    "Defense Tech": "#2c3e50",
+                    "Clean Energy": "#27ae60",
+                    "Automotive": "#e67e22",
+                    "IT & Electronics": "#3498db",
+                    "Medical Devices": "#1abc9c",
+                    "Other Industries": "#95a5a6"
+                }
+            };
+            
+            const blueprintColors = {
+                mining: d3.scaleOrdinal()
+                    .domain(["China", "United States", "Australia", "Myanmar", "Thailand", "Others"])
+                    .range(["#4a90e2", "#6bb6ff", "#5dade2", "#85c1f2", "#aed6f1", "#d4e6f1"]),
+                refining: {
+                    "China": "#2874a6",
+                    "Other": "#5499c7"
+                },
+                uses: "#21618c",
+                industries: {
+                    "Defense Tech": "#1a5490",
+                    "Clean Energy": "#2e86ab",
+                    "Automotive": "#3498db",
+                    "IT & Electronics": "#5dade2",
+                    "Medical Devices": "#85c1f2",
+                    "Other Industries": "#aed6f1"
+                }
+            };
+            
+            const colors = currentStyle === 'blueprint' ? blueprintColors : standardColors;
+
+            // Define the data based on corrected information
+            const data = {
+                nodes: [
+                    // Mining nodes (Stage 1) - 2022 data
+                    {name: "China Mining (70%)", category: "mining", id: "china-mining", country: "China"},
+                    {name: "USA Mining (14%)", category: "mining", id: "usa-mining", country: "United States"},
+                    {name: "Australia Mining (6%)", category: "mining", id: "australia-mining", country: "Australia"},
+                    {name: "Myanmar Mining (4%)", category: "mining", id: "myanmar-mining", country: "Myanmar"},
+                    {name: "Thailand Mining (2%)", category: "mining", id: "thailand-mining", country: "Thailand"},
+                    {name: "Other Mining (4%)", category: "mining", id: "other-mining", country: "Others"},
+                    
+                    // Refining nodes (Stage 2) - 2023 data shows 90% China
+                    {name: "China Refining (90%)", category: "refining", id: "china-refining", country: "China"},
+                    {name: "Other Refining (10%)", category: "refining", id: "other-refining", country: "Other"},
+                    
+                    // End industries (Stage 3) - Direct to industries as per story
+                    {name: "Defense Tech", category: "industry", id: "defense"},
+                    {name: "Clean Energy", category: "industry", id: "energy"},
+                    {name: "Automotive", category: "industry", id: "automotive"},
+                    {name: "IT & Electronics", category: "industry", id: "it"},
+                    {name: "Medical Devices", category: "industry", id: "medical"},
+                    {name: "Other Industries", category: "industry", id: "other-industries"}
+                ],
+                links: [
+                    // Mining to Refining flows
+                    {source: 0, target: 6, value: 70},    // China to China refining
+                    {source: 1, target: 6, value: 12},    // USA to China refining (Mountain Pass exports)
+                    {source: 1, target: 7, value: 2},     // USA to Other refining
+                    {source: 2, target: 6, value: 5},     // Australia to China refining
+                    {source: 2, target: 7, value: 1},     // Australia to Other refining
+                    {source: 3, target: 6, value: 4},     // Myanmar to China refining
+                    {source: 4, target: 6, value: 2},     // Thailand to China refining
+                    {source: 5, target: 7, value: 2},     // Other to Other refining
+                    {source: 5, target: 6, value: 2},     // Other to China refining
+                    
+                    // Refining to Industries
+                    // From China Refining (90% total) - distributed based on uses
+                    // Magnets (44.3%) go to multiple industries
+                    {source: 6, target: 8, value: 8},      // to Defense Tech
+                    {source: 6, target: 9, value: 20},     // to Clean Energy (wind, nuclear, fuel cells)
+                    {source: 6, target: 10, value: 15},    // to Automotive (EVs)
+                    {source: 6, target: 11, value: 25},    // to IT & Electronics
+                    {source: 6, target: 12, value: 5},     // to Medical Devices
+                    {source: 6, target: 13, value: 17},    // to Other Industries (catalysts, polishing, etc.)
+                    
+                    // From Other Refining (10% total)
+                    {source: 7, target: 8, value: 1},      // to Defense Tech
+                    {source: 7, target: 9, value: 2},      // to Clean Energy
+                    {source: 7, target: 10, value: 2},     // to Automotive
+                    {source: 7, target: 11, value: 3},     // to IT & Electronics
+                    {source: 7, target: 12, value: 1},     // to Medical Devices
+                    {source: 7, target: 13, value: 1}      // to Other Industries
+                ]
+            };
+
+            // Constructs a new sankey generator with our data
+            const {nodes, links} = sankey(data);
+
+            // Add gradient for Mountain Pass to China flow
+            const defs = svg.append("defs");
+            
+            const gradient = defs.append("linearGradient")
+                .attr("id", "mountain-pass-gradient")
+                .attr("x1", "0%")
+                .attr("y1", "0%")
+                .attr("x2", "100%")
+                .attr("y2", "0%");
+            
+            gradient.append("stop")
+                .attr("offset", "0%")
+                .style("stop-color", currentStyle === 'blueprint' ? "#6bb6ff" : "#3498db")
+                .style("stop-opacity", 1);
+            
+            gradient.append("stop")
+                .attr("offset", "100%")
+                .style("stop-color", currentStyle === 'blueprint' ? "#2874a6" : "#e74c3c")
+                .style("stop-opacity", 1);
+
+            // Add the links
+            const link = svg.append("g")
+                .selectAll(".link")
+                .data(links)
+                .enter().append("path")
+                .attr("class", "link")
+                .attr("d", d3.sankeyLinkHorizontal())
+                .style("stroke", d => {
+                    // Special gradient for Mountain Pass to China flow
+                    if (d.source.id === "usa-mining" && d.target.id === "china-refining") {
+                        return "url(#mountain-pass-gradient)";
+                    }
+                    // Color based on source
+                    if (currentStyle === 'blueprint') {
+                        return "#4a90e2";
+                    }
+                    if (d.source.category === "mining") {
+                        return colors.mining(d.source.country);
+                    }
+                    return "#bdc3c7";
+                })
+                .style("stroke-width", d => Math.max(1, d.width))
+                .on("mouseover", function(event, d) {
+                    tooltip.transition().duration(200).style("opacity", .9);
+                    tooltip.html(`${d.source.name.replace(/ \(\d+%?\)/, "")} → ${d.target.name.replace(/ \(\d+%?\)/, "")}<br/>Volume: ${d.value}%`)
+                        .style("left", (event.pageX) + "px")
+                        .style("top", (event.pageY - 28) + "px");
+                })
+                .on("mouseout", function(d) {
+                    tooltip.transition().duration(500).style("opacity", 0);
+                });
+
+            // Add the nodes
+            const node = svg.append("g")
+                .selectAll(".node")
+                .data(nodes)
+                .enter().append("g")
+                .attr("class", "node")
+                .attr("transform", d => `translate(${d.x0},${d.y0})`);
+
+            // Add rectangles for nodes
+            node.append("rect")
+                .attr("height", d => d.y1 - d.y0)
+                .attr("width", sankey.nodeWidth())
+                .style("fill", d => {
+                    if (d.category === "mining") {
+                        return colors.mining(d.country);
+                    } else if (d.category === "refining") {
+                        return colors.refining[d.country];
+                    } else {
+                        return colors.industries[d.name] || "#95a5a6";
+                    }
+                })
+                .style("stroke", currentStyle === 'blueprint' ? "#e8f4ff" : "#000")
+                .on("mouseover", function(event, d) {
+                    tooltip.transition().duration(200).style("opacity", .9);
+                    let value = d.sourceLinks.reduce((sum, link) => sum + link.value, 0) || 
+                               d.targetLinks.reduce((sum, link) => sum + link.value, 0);
+                    tooltip.html(`${d.name}<br/>Total Volume: ${value}%`)
+                        .style("left", (event.pageX) + "px")
+                        .style("top", (event.pageY - 28) + "px");
+                })
+                .on("mouseout", function(d) {
+                    tooltip.transition().duration(500).style("opacity", 0);
+                });
+
+            // Add node labels
+            node.append("text")
+                .attr("x", -6)
+                .attr("y", d => (d.y1 - d.y0) / 2)
+                .attr("dy", "0.35em")
+                .attr("text-anchor", "end")
+                .text(d => d.name)
+                .style("fill", currentStyle === 'blueprint' ? "#e8f4ff" : "#000")
+                .style("text-shadow", currentStyle === 'blueprint' ? "0 0 3px #4a90e2" : "0 1px 0 #fff")
+                .filter(d => d.x0 < width / 2)
+                .attr("x", 6 + sankey.nodeWidth())
+                .attr("text-anchor", "start");
+
+            // Add stage labels
+            const stages = [
+                {text: "MINING", x: 0},
+                {text: "REFINING", x: width * 0.45},
+                {text: "END INDUSTRIES", x: width}
+            ];
+
+            svg.append("g")
+                .selectAll(".stage-label")
+                .data(stages)
+                .enter().append("text")
+                .attr("class", "stage-label")
+                .attr("x", d => d.x)
+                .attr("y", -10)
+                .attr("text-anchor", d => {
+                    if (d.x === 0) return "start";
+                    if (d.x === width) return "end";
+                    return "middle";
+                })
+                .style("font-weight", "bold")
+                .style("font-size", "14px")
+                .style("fill", currentStyle === 'blueprint' ? "#e8f4ff" : "#333")
+                .style("text-shadow", currentStyle === 'blueprint' ? "0 0 5px #4a90e2" : "none")
+                .text(d => d.text);
+
+            // Add annotations
+            const annotations = [
+                {
+                    x: width * 0.22,
+                    y: height + 30,
+                    text: "Mountain Pass (California) exports most production to China"
+                },
+                {
+                    x: width * 0.65,
+                    y: height + 10,
+                    text: "China controls 90% of global rare earth refining"
+                }
+            ];
+
+            svg.append("g")
+                .selectAll(".annotation")
+                .data(annotations)
+                .enter().append("text")
+                .attr("class", "annotation")
+                .attr("x", d => d.x)
+                .attr("y", d => d.y)
+                .attr("text-anchor", "middle")
+                .style("fill", currentStyle === 'blueprint' ? "#a8d0f0" : "#666")
+                .text(d => d.text);
+
+            // Add grid lines for blueprint style
+            if (currentStyle === 'blueprint') {
+                const gridLines = svg.append("g")
+                    .attr("class", "grid-lines")
+                    .style("opacity", 0.1);
+                
+                // Vertical lines
+                for (let i = 0; i <= width; i += 50) {
+                    gridLines.append("line")
+                        .attr("x1", i)
+                        .attr("y1", 0)
+                        .attr("x2", i)
+                        .attr("y2", height)
+                        .style("stroke", "#4a90e2")
+                        .style("stroke-width", 0.5);
+                }
+                
+                // Horizontal lines
+                for (let i = 0; i <= height; i += 50) {
+                    gridLines.append("line")
+                        .attr("x1", 0)
+                        .attr("y1", i)
+                        .attr("x2", width)
+                        .attr("y2", i)
+                        .style("stroke", "#4a90e2")
+                        .style("stroke-width", 0.5);
+                }
+            }
+        }
+        
+        // Initial draw
+        drawSankey();
+    </script>
+</body>
+</html>
